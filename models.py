@@ -1,29 +1,25 @@
-""" GIT model and its variants.
-Note: Very raw code, will continue to sort these days.
+""" Implementation of GIT model and its variants.
+
 """
+import os
+import numpy as np
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.autograd import Variable
 
-import numpy as np
-import random
-import pickle
-from collections import Counter
-import os
-from sklearn.metrics import f1_score
-
-from utils import get_minibatch_dataset, evaluate
-
+from utils import get_minibatch, evaluate
 from base import ModelBase
 
-__author__ = 'Yifeng Tao'
+__author__ = "Yifeng Tao"
+
 
 class GIT(ModelBase):
   """ GIT model and its variants.
 
   """
+
   def __init__(self, args, **kwargs):
     """ Initialize the model.
 
@@ -32,19 +28,14 @@ class GIT(ModelBase):
     args: arguments for initializing the model.
 
     """
+
     super(GIT, self).__init__(args, **kwargs)
 
 
   def build(self):
-    """ Build the model.
-    Parameters
-    ----------
-    sga: list of list
-      SGA index in each tumors
+    """ Define modules of the model.
 
     """
-
-    self.NUM_CAN_TYPE = 16
 
     self.layer_sga_emb = nn.Embedding(
         num_embeddings=self.sga_size+1,
@@ -81,10 +72,8 @@ class GIT(ModelBase):
         bias=True)
 
     if self.initializtion:
-      pretrained_gene_emb = np.loadtxt(
-          open(os.path.join(self.input_dir, 'init_emb_new.csv')),
-          delimiter=",")
-      self.layer_sga_emb.weight.data.copy_(torch.from_numpy(pretrained_gene_emb))
+      gene_emb_pretrain = np.load(os.path.join(self.input_dir, "gene_emb_pretrain.npy"))
+      self.layer_sga_emb.weight.data.copy_(torch.from_numpy(gene_emb_pretrain))
 
     self.optimizer = optim.Adam(
         self.parameters(),
@@ -93,169 +82,171 @@ class GIT(ModelBase):
 
 
   def forward(self, sga_index, can_index):
-    """Forward process.
+    """ Forward process.
 
     Parameters
     ----------
     sga_index: list of SGA index vectors.
-    can_index: list of cancer type index vectors.
+    can_index: list of cancer type indices.
 
     Returns
     -------
-    Loss of this process, a pytorch variable.
+    preds: 2D array of float in [0, 1]
+      predicted gene expression
+    hid_tmr: 2D array of float
+      hidden layer of MLP
+    emb_tmr: 2D array of float
+      tumor embedding
+    emb_sga: 2D array of float
+      stratified tumor embedding
+    attn_wt: 2D array of float
+      attention weights of SGAs
+
     """
-    # Embedding of specific cancer type
-    # (batch_size, 1, self.emb_dim)
+
+    # cancer type embedding
     emb_can = self.layer_can_emb(can_index)
-    # (batch_size, self.emb_dim)
     emb_can = emb_can.view(-1,self.embedding_size)
 
-    # Embeddings of mutations
-    # (batch_size, max_len=1000, self.emb_dim)
+    # gene embedings
     E_t = self.layer_sga_emb(sga_index)
 
-    # Flattened E_t
-    # (batch_size * max_len=1000, self.emb_dim)
+    # squeeze and tanh-curve the gene embeddings
     E_t_flatten = E_t.view(-1, self.embedding_size)
-    # E_t1_flatten
-    # (batch_size * max_len=1000, self.attention_size)
     E_t1_flatten = torch.tanh( self.layer_w_0(E_t_flatten) )
-    # E_t2_flatten
-    # (batch_size * max_len=1000, self.attention_head)
+
+    # multiplied by attention heads
     E_t2_flatten = self.layer_beta(E_t1_flatten)
-    # E_t2
-    # (batch_size, max_len=1000, self.attention_head)
-
-
     E_t2 = E_t2_flatten.view(-1, self.num_max_sga, self.attention_head)
 
-    # The code bellow doesn't work in some version of PyTorch:
-    # F.softmax(E_t2,dim=1)
-    # So we switch the first and second dim of tensor E_t2
+    # normalize by softmax
     E_t2 = E_t2.permute(1,0,2)
-    # (max_len=1000, batch_size, self.attention_head)
     A = F.softmax(E_t2)
-    # A: attention matrix
-    # (batch_size, max_len=1000, self.attention_head)
     A = A.permute(1,0,2)
 
     if self.attention:
-      # Multi-head attention weighted sga embedding:
-      # emb_sga = sum(A^T * E_t, dim=1)
-      # where A^T * E_t: (batch_size, self.attention_head, self.emb_dim)
+      # multi-head attention weighted sga embedding:
       emb_sga = torch.sum( torch.bmm( A.permute(0,2,1), E_t ), dim=1)
-      # (batch_size, self.emb_dim)
       emb_sga = emb_sga.view(-1,self.embedding_size)
     else:
-      #E_t = self.layer_sga_emb(sga_index)
+      # if not using attention, simply sum up SGA embeddings
       emb_sga = torch.sum(E_t, dim=1)
       emb_sga = emb_sga.view(-1, self.embedding_size)
 
-    # Embedding of tumor:
-    # (batch_size, self.emb_dim)
+    # if use cancer type input, add cancer type embedding
     if self.cancer_type:
       emb_tmr = emb_can+emb_sga
     else:
       emb_tmr = emb_sga
 
+    # MLP decoder
     emb_tmr_relu = self.layer_dropout_1(F.relu(emb_tmr))
-
     hid_tmr = self.layer_w_1(emb_tmr_relu)
     hid_tmr_relu = self.layer_dropout_2(F.relu(hid_tmr))
+    preds = F.sigmoid(self.layer_w_2(hid_tmr_relu))
 
+    # attention weights
     attn_wt = torch.sum(A, dim=2)
     attn_wt = attn_wt.view(-1, self.num_max_sga)
 
-    return F.sigmoid(self.layer_w_2(hid_tmr_relu)), emb_tmr, hid_tmr, emb_sga, attn_wt
+    return preds, hid_tmr, emb_tmr, emb_sga, attn_wt
 
 
-  def train(
-      self, train_set, test_set,
-      batch_size=None, test_batch_size=None,
-      max_iter=None, max_fscore=None,
-      test_inc_size=1, **kwargs):
-    """
+  def train(self, train_set, test_set,
+            batch_size=None, test_batch_size=None,
+            max_iter=None, max_fscore=None,
+            test_inc_size=None, **kwargs):
+    """ Train the model until max_iter or max_fscore reached.
+
     Parameters
     ----------
     train_set: dict
+      dict of lists, including SGAs, cancer types, DEGs, patient barcodes
     test_set: dict
+    batch_size: int
     test_batch_size: int
     max_iter: int
+      max number of iterations that the training will run
+    max_fscore: float
+      max test F1 score that the model will continue to train itself
     test_inc_size: int
-      interval of running an evaluation
+      interval of running a test/evaluation
 
     """
 
     for iter_train in range(0, max_iter+1, batch_size):
-      batch_set = get_minibatch_dataset(
-          train_set, iter_train, batch_size,batch_type='train')
-
-      preds, _, _, _, _ = self.forward(
-          batch_set['sga'],
-          batch_set['can']
-          )
-      labels = batch_set['deg']
+      batch_set = get_minibatch(train_set, iter_train, batch_size,batch_type="train")
+      preds, _, _, _, _ = self.forward(batch_set["sga"], batch_set["can"])
+      labels = batch_set["deg"]
 
       self.optimizer.zero_grad()
-
-      loss = -torch.log( self.EPSILON +1-torch.abs(preds-labels) ).mean()
-
+      loss = -torch.log( self.epsilon +1-torch.abs(preds-labels) ).mean()
       loss.backward()
       self.optimizer.step()
 
       if test_inc_size and (iter_train % test_inc_size == 0):
-        preds, labels, _, _, _, _, _ = self.test(test_set, test_batch_size)
-
+        labels, preds, _, _, _, _, _ = self.test(test_set, test_batch_size)
         precision, recall, f1score, accuracy = evaluate(
-            labels, preds)
-
-        print('[%d,%d], f1_score: %.3f, acc: %.3f'% (iter_train//len(train_set['can']),
-              iter_train % len(train_set['can']), f1score, accuracy)
-          )
+            labels, preds, epsilon=self.epsilon)
+        print("[%d,%d], f1_score: %.3f, acc: %.3f"% (iter_train//len(train_set["can"]),
+              iter_train%len(train_set["can"]), f1score, accuracy))
 
         if f1score >= max_fscore:
           break
-    self.save_model()
+
+    self.save_model(os.path.join(self.output_dir, "trained_model.pth"))
 
 
   def test(self, test_set, test_batch_size, **kwargs):
-    preds = []
-    labels = []
+    """ Run forward process over the given whole test set.
 
-    emb_tmr = []
-    hid_tmr = []
-    emb_sga = []
+    Parameters
+    ----------
+    test_set: dict
+      dict of lists, including SGAs, cancer types, DEGs, patient barcodes
+    test_batch_size: int
 
-    attn_wt = []
-    tmr = []
+    Returns
+    -------
+    labels: 2D array of 0/1
+      groud truth of gene expression
+    preds: 2D array of float in [0, 1]
+      predicted gene expression
+    hid_tmr: 2D array of float
+      hidden layer of MLP
+    emb_tmr: 2D array of float
+      tumor embedding
+    emb_sga: 2D array of float
+      stratified tumor embedding
+    attn_wt: 2D array of float
+      attention weights of SGAs
+    tmr: list of str
+      barcodes of patients/tumors
 
-    for iter_test in range(0, len(test_set['can']), test_batch_size):
-      batch_set = get_minibatch_dataset(
-          test_set, iter_test, test_batch_size,batch_type='test')
-      batch_preds, batch_emb_tmr, batch_hid_tmr, batch_emb_sga, batch_attn_wt = self.forward(
-          batch_set['sga'],
-          batch_set['can'])
-      batch_labels = batch_set['deg']
+    """
 
-      attn_wt.append(batch_attn_wt.data.numpy())
+    labels, preds, hid_tmr, emb_tmr, emb_sga, attn_wt, tmr = [], [], [], [], [], [], []
 
-      tmr = tmr + batch_set["tmr"]
-      emb_tmr.append(batch_emb_tmr.data.numpy())
-      hid_tmr.append(batch_hid_tmr.data.numpy())
-      emb_sga.append(batch_emb_sga.data.numpy())
+    for iter_test in range(0, len(test_set["can"]), test_batch_size):
+      batch_set = get_minibatch(test_set, iter_test, test_batch_size, batch_type="test")
+      batch_preds, batch_hid_tmr, batch_emb_tmr, batch_emb_sga, batch_attn_wt = self.forward(
+          batch_set["sga"], batch_set["can"])
+      batch_labels = batch_set["deg"]
 
-      preds.append(batch_preds.data.numpy())
       labels.append(batch_labels.data.numpy())
+      preds.append(batch_preds.data.numpy())
+      hid_tmr.append(batch_hid_tmr.data.numpy())
+      emb_tmr.append(batch_emb_tmr.data.numpy())
+      emb_sga.append(batch_emb_sga.data.numpy())
+      attn_wt.append(batch_attn_wt.data.numpy())
+      tmr = tmr + batch_set["tmr"]
 
-
-    emb_tmr = np.concatenate(emb_tmr,axis=0)
-    hid_tmr = np.concatenate(hid_tmr,axis=0)
-    attn_wt = np.concatenate(attn_wt,axis=0)
-    emb_sga = np.concatenate(emb_sga,axis=0)
-
-    preds = np.concatenate(preds,axis=0)
     labels = np.concatenate(labels,axis=0)
+    preds = np.concatenate(preds,axis=0)
+    hid_tmr = np.concatenate(hid_tmr,axis=0)
+    emb_tmr = np.concatenate(emb_tmr,axis=0)
+    emb_sga = np.concatenate(emb_sga,axis=0)
+    attn_wt = np.concatenate(attn_wt,axis=0)
 
-    return preds, labels, emb_tmr, hid_tmr, attn_wt, emb_sga, tmr
-
+    return labels, preds, hid_tmr, emb_tmr, emb_sga, attn_wt, tmr
 
