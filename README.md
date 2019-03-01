@@ -83,7 +83,7 @@ Please cite this [paper](https://arxiv.org/abs/1902.00078) if you use the data o
 ```
 @article{tao2019git,
   title={From Genome to Phenome: Predicting Multiple Cancer Phenotypes based on Somatic Genomic Alterations via the Genomic Impact Transformer},
-  author={Tao, Yifeng and Cai, Chunhui and Cohen, William W and Lu, Xinghua},
+  author={Tao, Yifeng and Cai, Chunhui and Cohen, William W. and Lu, Xinghua},
   journal={arXiv preprint arXiv: 1902.00078},
   year={2019}
 }
