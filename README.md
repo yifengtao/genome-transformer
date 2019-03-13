@@ -12,12 +12,7 @@ The preprocessed TCGA dataset, and gene embeddings mentioned in the paper are al
 ## Prerequisites
 
 The code runs on `Python 2.7`, and following packages are used:
-* `PyTorch 0.1.12_2`
-* `pickle`
-* `numpy`
-* `random`
-* `argparse`
-* `os`
+* `PyTorch 0.1.12_2`, `pickle`, `numpy`, `random`, `argparse`, `os`.
 
 
 ## Data
@@ -33,7 +28,7 @@ tar -zxvf data.tar.gz
 
 The preprocessed SGA-DEG TCGA dataset is available at `data/dataset.pkl`, which contains SGAs, DEGs, cancer types, and barcodes of 4,468 cancer samples from TCGA:
 ```
-data = pickle.load( open("data/dataset.pkl"), "rb") )
+data = pickle.load( open("data/dataset.pkl", "rb") )
 ```
 
 ### Gene embeddings
