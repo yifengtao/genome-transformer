@@ -4,7 +4,7 @@
 ## Introduction
 
 This repository contains PyTorch implementation of GIT model (and its variants) in the following paper:
-Yifeng Tao, Chunhui Cai, William W. Cohen, Xinghua Lu. 2019. [From genome to phenome: Predicting multiple cancer phenotypes based on somatic genomic alterations via the genomic impact transformer](https://arxiv.org/abs/1902.00078). arXiv preprint arXiv: 1902.00078.
+Yifeng Tao, Chunhui Cai, William W. Cohen, Xinghua Lu. [From genome to phenome: Predicting multiple cancer phenotypes based on somatic genomic alterations via the genomic impact transformer](https://arxiv.org/abs/1902.00078). Proceedings of the Pacific Symposium on Biocomputing (PSB). 2020.
 
 The preprocessed TCGA dataset, and gene embeddings mentioned in the paper are also released below.
 
@@ -74,13 +74,16 @@ python test_run.py --help
 
 ## Citation
 
-Please cite this [paper](https://arxiv.org/abs/1902.00078) if you use the data or code from this repo:
+If you find the data or code from this repository helpful, please cite this [paper](https://arxiv.org/abs/1902.00078):
 ```
-@article{tao2019git,
-  title={From Genome to Phenome: Predicting Multiple Cancer Phenotypes based on Somatic Genomic Alterations via the Genomic Impact Transformer},
-  author={Tao, Yifeng and Cai, Chunhui and Cohen, William W. and Lu, Xinghua},
-  journal={arXiv preprint arXiv: 1902.00078},
-  year={2019}
+@inproceedings{tao2020git,
+  title = {From Genome to Phenome: Predicting Multiple Cancer Phenotypes based on Somatic Genomic Alterations via the Genomic Impact Transformer},
+  author = {Tao, Yifeng  and 
+    Cai, Chunhui  and 
+    Cohen, William W.  and 
+    Lu, Xinghua},
+  booktitle={Pacific Symposium on Biocomputing},
+  year = {2020},
 }
 ```
 
