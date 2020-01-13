@@ -12,7 +12,7 @@ The preprocessed TCGA dataset, and gene embeddings mentioned in the paper are al
 ## Prerequisites
 
 The code runs on `Python 2.7`, and following packages are used:
-* `PyTorch 0.1.12_2`, `pickle`, `numpy`, `random`, `argparse`, `os`.
+* `PyTorch 0.1.12_2`, `pandas`, `pickle`, `numpy`, `random`, `argparse`, `os`.
 
 
 ## Data
@@ -49,7 +49,7 @@ It is a 19782 by 512 matrix, where the index of each row can be mapped to a gene
 The parameters of trained GIT model are stored at `data/trained_model.pth`.
 
 
-## Demo
+## Replicate experiments
 
 ### Train GIT model
 
@@ -70,6 +70,24 @@ python test_run.py --train_model False
 You may run more GIT variants, e.g., `GIT-init`, `GIT-attn`, `GIT-can` etc., by checking the code and comments of `test_run.py`, or:
 ```
 python test_run.py --help
+```
+
+## FAQ
+
+* Q: How to prepare my own input data and run experiments on the new data?
+
+* A: You can directly prepare the `dataset.pkl` pickle file. However, we also provide pieces of code (`prepare_dataset.py`) to faciliate you to convert more general data types (`csv` and `txt`) into the `dataset.pkl`.
+
+First, you need to format your own data into three files: `mydata/cancer_type.txt` (each line a cancer type), `deg.csv` (each row a sample, each column an over/under-expressed gene), `sga.txt` (each row a sample name and mutated genes, comma separated).
+
+Second, run the following code to convert and merge these files into a single `mydata/dataset.pkl` file:
+```
+python prepare_dataset.py --input_dir mydata --output_dir mydata
+```
+
+Third, run experiments on the new data:
+```
+python test_run.py --initializtion False --input_dir mydata --output_dir mydata
 ```
 
 ## Citation
